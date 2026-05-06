@@ -89,7 +89,17 @@ export function getAgentModel(
     (agentModelWithExp === 'haiku' || agentModelWithExp === 'sonnet') &&
     !checkIsClaudeNativeProvider()
   ) {
-    // Non-Claude-native provider → inherit parent model
+    // Non-Claude-native providers don't have haiku/sonnet aliases natively.
+    // Allow env var overrides to map these aliases to provider-specific models
+    // (e.g. CLAUDE_CODE_HAIKU_MODEL=deepseek-v4-flash on DeepSeek).
+    // Falls back to inheriting the parent model if no override is set.
+    const envOverride =
+      agentModelWithExp === 'haiku'
+        ? process.env.CLAUDE_CODE_HAIKU_MODEL
+        : process.env.CLAUDE_CODE_SONNET_MODEL
+    if (envOverride) {
+      return parseUserSpecifiedModel(envOverride)
+    }
     return getRuntimeMainLoopModel({
       permissionMode: permissionMode ?? 'default',
       mainLoopModel: parentModel,

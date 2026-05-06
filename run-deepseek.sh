@@ -24,6 +24,11 @@ export OPENAI_API_KEY="$DEEPSEEK_API_KEY"
 export OPENAI_BASE_URL="https://api.deepseek.com/v1"
 export OPENAI_MODEL="${DEEPSEEK_MODEL:-deepseek-v4-pro}"
 
+# サブエージェントのモデル割り当て
+# haiku → v4-flash（Explore, claude-code-guide など軽い調査）
+# sonnet → 未設定（Plan, verification などは親の v4-pro を継承）
+export CLAUDE_CODE_HAIKU_MODEL="deepseek-v4-flash"
+
 # openclaude が他プロバイダの認証 env を拾って経路を切り替えると即終了する。
 # vision.sh / web-search.sh は自前で .env を source するので、ここで unset しても問題ない。
 # 新しいプロバイダを .env に足すたびにこのリストに追加すること。
