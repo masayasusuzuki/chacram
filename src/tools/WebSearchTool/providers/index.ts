@@ -5,6 +5,7 @@
  *
  *   "auto"      (default) — try providers in priority order, fall through on failure
  *   "custom"    — use WEB_SEARCH_API / WEB_PROVIDER preset only (fail loudly)
+ *   "brave"     — use Brave Search only (fail loudly)
  *   "firecrawl" — use Firecrawl only (fail loudly)
  *   "tavily"    — use Tavily only (fail loudly)
  *   "exa"       — use Exa only (fail loudly)
@@ -26,6 +27,7 @@
 import type { SearchInput, SearchProvider } from './types.js'
 import type { ProviderOutput } from './types.js'
 
+import { braveProvider } from './brave.js'
 import { customProvider } from './custom.js'
 import { duckduckgoProvider } from './duckduckgo.js'
 import { firecrawlProvider } from './firecrawl.js'
@@ -44,13 +46,15 @@ export { extractHits } from './custom.js'
 // ---------------------------------------------------------------------------
 // All registered providers — order matters for auto mode
 // ---------------------------------------------------------------------------
-// Priority: firecrawl → tavily → exa → you → jina → bing → mojeek → linkup → ddg
+// Priority: brave → firecrawl → tavily → exa → you → jina → bing → mojeek → linkup → ddg
 // DDG is last because it's free but rate-limited.
+// Brave is first because it has a generous free tier ($5/mo credit) and is widely used.
 // NOTE: customProvider is intentionally excluded from the auto chain.
 //       It is only available when WEB_SEARCH_PROVIDER=custom is explicitly set.
 //       This prevents the generic outbound provider from silently becoming the default backend.
 
 const ALL_PROVIDERS: SearchProvider[] = [
+  braveProvider,
   firecrawlProvider,
   tavilyProvider,
   exaProvider,
@@ -73,6 +77,7 @@ export function getAvailableProviders(): SearchProvider[] {
 export type ProviderMode =
   | 'auto'
   | 'custom'
+  | 'brave'
   | 'firecrawl'
   | 'ddg'
   | 'tavily'
@@ -85,6 +90,7 @@ export type ProviderMode =
   | 'native'
 
 const PROVIDER_BY_NAME: Record<string, SearchProvider> = {
+  brave: braveProvider,
   custom: customProvider,
   firecrawl: firecrawlProvider,
   ddg: duckduckgoProvider,
