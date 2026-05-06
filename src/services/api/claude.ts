@@ -83,6 +83,7 @@ import {
   stripCallerFieldFromAssistantMessage,
   stripToolReferenceBlocksFromUserMessage,
 } from '../../utils/messages.js'
+import { proxyMediaToVisionModel } from './visionProxy.js'
 import {
   getDefaultOpusModel,
   getDefaultSonnetModel,
@@ -1346,6 +1347,16 @@ async function* queryModel(
   messagesForAPI = stripExcessMediaItems(
     messagesForAPI,
     API_MAX_MEDIA_PER_REQUEST,
+  )
+
+  // Proxy images/PDFs to Anthropic Sonnet for vision analysis when the
+  // current model doesn't natively support vision (e.g., DeepSeek).
+  // This runs after stripExcessMediaItems so we proxy at most
+  // API_MAX_MEDIA_PER_REQUEST media items.
+  messagesForAPI = await proxyMediaToVisionModel(
+    messagesForAPI,
+    options.model,
+    signal,
   )
 
   // Instrumentation: Track message count after normalization
