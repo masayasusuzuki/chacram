@@ -29,6 +29,9 @@ export OPENAI_MODEL="${DEEPSEEK_MODEL:-deepseek-v4-pro}"
 # sonnet → 未設定（Plan, verification などは親の v4-pro を継承）
 export CLAUDE_CODE_HAIKU_MODEL="deepseek-v4-flash"
 
+# Auto mode (Shift+Tab で自動許可) を有効化
+export CLAUDE_CODE_AUTO_MODE=1
+
 # openclaude が他プロバイダの認証 env を拾って経路を切り替えると即終了する。
 # vision.sh / web-search.sh は自前で .env を source するので、ここで unset しても問題ない。
 # 新しいプロバイダを .env に足すたびにこのリストに追加すること。

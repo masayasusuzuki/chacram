@@ -159,6 +159,10 @@ export function modelSupportsStructuredOutputs(model: string): boolean {
 // @[MODEL LAUNCH]: Add the new model if it supports auto mode (specifically PI probes) — ask in #proj-claude-code-safety-research.
 export function modelSupportsAutoMode(model: string): boolean {
   if (feature('TRANSCRIPT_CLASSIFIER')) {
+    // Env var override: allow auto mode on non-firstParty providers
+    // (e.g. DeepSeek) when explicitly opted in via CLAUDE_CODE_AUTO_MODE=1
+    if (isEnvTruthy(process.env.CLAUDE_CODE_AUTO_MODE)) return true
+
     const m = getCanonicalName(model)
     // External: firstParty-only at launch (PI probes not wired for
     // Bedrock/Vertex/Foundry yet). Checked before allowModels so the GB
