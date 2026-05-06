@@ -3,6 +3,9 @@ import { getModel } from '../../integrations/index.js'
 import { logForDebugging } from '../../utils/debug.js'
 import type { AssistantMessage, UserMessage } from '../../types/message.js'
 import type { TextBlockParam } from '@anthropic-ai/sdk/resources/index.mjs'
+import { getClaudeAIOAuthTokens } from '../../utils/auth.js'
+import { isEnvTruthy } from '../../utils/envUtils.js'
+import { getOauthConfig } from '../../constants/oauth.js'
 
 // Anthropic-native media block format
 type AnthropicMediaBlock =
@@ -60,11 +63,13 @@ export async function proxyMediaToVisionModel(
     return messagesForAPI
   }
 
-  // STEP 2: Check for Anthropic API key
+  // STEP 2: Resolve authentication — OAuth token preferred, API key as fallback
+  const oauthToken = getClaudeAIOAuthTokens()?.accessToken
   const apiKey = process.env.ANTHROPIC_API_KEY
-  if (!apiKey) {
+
+  if (!oauthToken && !apiKey) {
     logForDebugging(
-      'Vision proxy: No ANTHROPIC_API_KEY, replacing media with text stubs',
+      'Vision proxy: No auth available (OAuth or ANTHROPIC_API_KEY), replacing media with text stubs',
     )
     return replaceMediaWithTextStubs(messagesForAPI)
   }
@@ -77,8 +82,16 @@ export async function proxyMediaToVisionModel(
     `Vision proxy: Converting ${mediaPositions.length} media block(s) to text via Anthropic ${VISION_MODEL}`,
   )
 
-  // STEP 4: Create a dedicated Anthropic client
-  const visionClient = new Anthropic({ apiKey })
+  // STEP 4: Create a dedicated Anthropic client (OAuth or API key)
+  const isStagingOAuth =
+    process.env.USER_TYPE === 'ant' && isEnvTruthy(process.env.USE_STAGING_OAUTH)
+
+  const visionClient = oauthToken
+    ? new Anthropic({
+        authToken: oauthToken,
+        ...(isStagingOAuth ? { baseURL: getOauthConfig().BASE_API_URL } : {}),
+      })
+    : new Anthropic({ apiKey: apiKey! })
 
   // STEP 5: Process media blocks in parallel batches
   const descriptions = await describeAllMedia(

@@ -63,6 +63,21 @@ bash run-deepseek.sh
 | v4-pro | $0.435 | $0.87 |
 | v4-flash | $0.14 | $0.28 |
 
+**エージェント別モデル割り当て:**
+
+| エージェント | ソース上の設定 | 実効モデル | 主な用途 |
+|------------|-------------|----------|---------|
+| **Explore** | `haiku` | **v4-flash** | ファイル検索・Grep・コード読み取り |
+| **claude-code-guide** | `haiku` | **v4-flash** | OpenClaude の使い方質問 |
+| **Plan** | `inherit` | v4-pro | 実装計画の設計・アーキテクチャ判断 |
+| **verification** | `inherit` | v4-pro | テスト実行・ビルド確認・lint |
+| **general-purpose** | デフォルト(`inherit`) | v4-pro | 汎用調査・複数ステップタスク |
+| **statusline-setup** | `sonnet` | v4-pro | ステータスライン設定（ほぼ呼ばれない） |
+| code-reviewer | (ビルトインなし) | v4-pro | コードレビュー |
+
+> `sonnet` エイリアスは `CLAUDE_CODE_SONNET_MODEL` で上書き可能。
+> コードレビューも v4-flash にしたい場合は `export CLAUDE_CODE_SONNET_MODEL=deepseek-v4-flash` を追加。
+
 ### 4. Auto Mode 有効化
 
 **ファイル:** `src/utils/betas.ts`（修正）
