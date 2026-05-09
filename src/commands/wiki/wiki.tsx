@@ -12,7 +12,7 @@ import { getCwd } from '../../utils/cwd.js'
 function renderHelp(): string {
   return `Usage: /wiki [init|status|ingest <path>]
 
-Manage the OpenClaude project wiki stored in .openclaude/wiki.
+Manage the CHACRAM project wiki stored in .chacram/wiki.
 
 Commands:
   /wiki init    Initialize the wiki structure in the current project
@@ -49,7 +49,7 @@ function formatStatus(status: Awaited<ReturnType<typeof getWikiStatus>>): string
   }
 
   return [
-    'OpenClaude wiki status',
+    'CHACRAM wiki status',
     '',
     `Root: ${status.root}`,
     `Pages: ${status.pageCount}`,

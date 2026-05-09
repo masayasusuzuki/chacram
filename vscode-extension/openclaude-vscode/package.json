@@ -1,7 +1,7 @@
 {
-  "name": "openclaude-vscode",
-  "displayName": "OpenClaude",
-  "description": "Practical VS Code companion for OpenClaude with project-aware launch behavior and a real Control Center.",
+  "name": "chacram-vscode",
+  "displayName": "CHACRAM",
+  "description": "Practical VS Code companion for CHACRAM with project-aware launch behavior and a real Control Center.",
   "version": "0.2.0",
   "publisher": "devnull-bootloader",
   "engines": {
@@ -11,21 +11,7 @@
     "Themes",
     "Other"
   ],
-  "activationEvents": [
-    "onStartupFinished",
-    "onCommand:openclaude.start",
-    "onCommand:openclaude.startInWorkspaceRoot",
-    "onCommand:openclaude.openDocs",
-    "onCommand:openclaude.openSetupDocs",
-    "onCommand:openclaude.openWorkspaceProfile",
-    "onCommand:openclaude.openControlCenter",
-    "onCommand:openclaude.newChat",
-    "onCommand:openclaude.openChat",
-    "onCommand:openclaude.resumeSession",
-    "onCommand:openclaude.abortChat",
-    "onView:openclaude.controlCenter",
-    "onView:openclaude.chat"
-  ],
+  "activationEvents": [],,
   "main": "./src/extension.js",
   "files": [
     "README.md",
@@ -39,74 +25,74 @@
   "contributes": {
     "commands": [
       {
-        "command": "openclaude.start",
-        "title": "OpenClaude: Launch in Terminal",
-        "category": "OpenClaude"
+        "command": "chacram.start",
+        "title": "CHACRAM: Launch in Terminal",
+        "category": "CHACRAM"
       },
       {
-        "command": "openclaude.startInWorkspaceRoot",
-        "title": "OpenClaude: Launch in Workspace Root",
-        "category": "OpenClaude"
+        "command": "chacram.startInWorkspaceRoot",
+        "title": "CHACRAM: Launch in Workspace Root",
+        "category": "CHACRAM"
       },
       {
-        "command": "openclaude.openDocs",
-        "title": "OpenClaude: Open Repository",
-        "category": "OpenClaude"
+        "command": "chacram.openDocs",
+        "title": "CHACRAM: Open Repository",
+        "category": "CHACRAM"
       },
       {
-        "command": "openclaude.openSetupDocs",
-        "title": "OpenClaude: Open Setup Guide",
-        "category": "OpenClaude"
+        "command": "chacram.openSetupDocs",
+        "title": "CHACRAM: Open Setup Guide",
+        "category": "CHACRAM"
       },
       {
-        "command": "openclaude.openWorkspaceProfile",
-        "title": "OpenClaude: Open Workspace Profile",
-        "category": "OpenClaude"
+        "command": "chacram.openWorkspaceProfile",
+        "title": "CHACRAM: Open Workspace Profile",
+        "category": "CHACRAM"
       },
       {
-        "command": "openclaude.openControlCenter",
-        "title": "OpenClaude: Open Control Center",
-        "category": "OpenClaude"
+        "command": "chacram.openControlCenter",
+        "title": "CHACRAM: Open Control Center",
+        "category": "CHACRAM"
       },
       {
-        "command": "openclaude.newChat",
-        "title": "OpenClaude: New Chat",
-        "category": "OpenClaude"
+        "command": "chacram.newChat",
+        "title": "CHACRAM: New Chat",
+        "category": "CHACRAM"
       },
       {
-        "command": "openclaude.openChat",
-        "title": "OpenClaude: Open Chat Panel",
-        "category": "OpenClaude"
+        "command": "chacram.openChat",
+        "title": "CHACRAM: Open Chat Panel",
+        "category": "CHACRAM"
       },
       {
-        "command": "openclaude.resumeSession",
-        "title": "OpenClaude: Resume Session",
-        "category": "OpenClaude"
+        "command": "chacram.resumeSession",
+        "title": "CHACRAM: Resume Session",
+        "category": "CHACRAM"
       },
       {
-        "command": "openclaude.abortChat",
-        "title": "OpenClaude: Abort Generation",
-        "category": "OpenClaude"
+        "command": "chacram.abortChat",
+        "title": "CHACRAM: Abort Generation",
+        "category": "CHACRAM"
       }
     ],
     "viewsContainers": {
       "activitybar": [
         {
-          "id": "openclaude",
-          "title": "OpenClaude",
-          "icon": "media/openclaude.svg"
+          "id": "chacram",
+          "title": "CHACRAM",
+          "icon": "media/chacram.svg"
         }
       ]
     },
     "views": {
-      "openclaude": [
+      "chacram": [
         {
-          "id": "openclaude.chat",
+          "id": "chacram.chat",
           "name": "Chat",
           "type": "webview"
         },
         {
-          "id": "openclaude.controlCenter",
+          "id": "chacram.controlCenter",
           "name": "Control Center",
           "type": "webview"
         }
@@ -114,30 +100,30 @@
     },
     "keybindings": [
       {
-        "command": "openclaude.openChat",
+        "command": "chacram.openChat",
         "key": "ctrl+shift+l",
         "mac": "cmd+shift+l"
       }
     ],
     "configuration": {
-      "title": "OpenClaude",
+      "title": "CHACRAM",
       "properties": {
-        "openclaude.launchCommand": {
+        "chacram.launchCommand": {
           "type": "string",
-          "default": "openclaude",
-          "description": "Command run in the integrated terminal when launching OpenClaude."
+          "default": "chacram",
+          "description": "Command run in the integrated terminal when launching CHACRAM."
         },
-        "openclaude.terminalName": {
+        "chacram.terminalName": {
           "type": "string",
-          "default": "OpenClaude",
-          "description": "Integrated terminal tab name for OpenClaude sessions."
+          "default": "CHACRAM",
+          "description": "Integrated terminal tab name for CHACRAM sessions."
         },
-        "openclaude.useOpenAIShim": {
+        "chacram.useOpenAIShim": {
           "type": "boolean",
           "default": false,
-          "description": "Optionally set CLAUDE_CODE_USE_OPENAI=1 in launched OpenClaude terminals."
+          "description": "Optionally set CLAUDE_CODE_USE_OPENAI=1 in launched CHACRAM terminals."
         },
-        "openclaude.permissionMode": {
+        "chacram.permissionMode": {
           "type": "string",
           "default": "acceptEdits",
           "enum": ["default", "acceptEdits", "bypassPermissions", "plan"],
@@ -153,9 +139,9 @@
     },
     "themes": [
       {
-        "label": "OpenClaude Terminal Black",
+        "label": "CHACRAM Terminal Black",
         "uiTheme": "vs-dark",
-        "path": "./themes/OpenClaude-Terminal-Black.json"
+        "path": "./themes/CHACRAM-Terminal-Black.json"
       }
     ]
   },
@@ -165,7 +151,7 @@
     "package": "npx @vscode/vsce package --no-dependencies"
   },
   "keywords": [
-    "openclaude",
+    "chacram",
     "terminal",
     "theme",
     "cli",
@@ -173,7 +159,7 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/Gitlawb/openclaude"
+    "url": "https://github.com/Gitlawb/chacram"
   },
   "license": "MIT"
 }

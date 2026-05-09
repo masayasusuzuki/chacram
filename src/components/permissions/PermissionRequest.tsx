@@ -128,13 +128,13 @@ export type ToolUseConfirm<Input extends AnyObject = AnyObject> = {
 function getNotificationMessage(toolUseConfirm: ToolUseConfirm): string {
   const toolName = toolUseConfirm.tool.userFacingName(toolUseConfirm.input as never);
   if (toolUseConfirm.tool === ExitPlanModeV2Tool) {
-    return 'OpenClaude needs your approval for the plan';
+    return 'CHACRAM needs your approval for the plan';
   }
   if (toolUseConfirm.tool === EnterPlanModeTool) {
-    return 'OpenClaude wants to enter plan mode';
+    return 'CHACRAM wants to enter plan mode';
   }
   if (feature('REVIEW_ARTIFACT') && toolUseConfirm.tool === ReviewArtifactTool) {
-    return 'OpenClaude needs your approval for a review artifact';
+    return 'CHACRAM needs your approval for a review artifact';
   }
   if (!toolName || toolName.trim() === '') {
     return 'OpenClaude needs your attention';

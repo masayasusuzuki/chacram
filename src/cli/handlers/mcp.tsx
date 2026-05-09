@@ -250,7 +250,7 @@ export async function mcpListHandler(): Promise<void> {
   } = await getAllMcpConfigs();
   if (Object.keys(configs).length === 0) {
     // biome-ignore lint/suspicious/noConsole:: intentional console output
-    console.log('No MCP servers configured. Use `openclaude mcp add` to add a server.');
+    console.log('No MCP servers configured. Use `chacram mcp add` to add a server.');
   } else {
     // biome-ignore lint/suspicious/noConsole:: intentional console output
     console.log('Checking MCP server health...\n');

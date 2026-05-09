@@ -262,7 +262,7 @@ export function ConsoleOAuthFlow({
           state: 'success'
         });
         void sendNotification({
-          message: 'OpenClaude login successful',
+          message: 'CHACRAM login successful',
           notificationType: 'auth_success'
         }, terminal);
       }
@@ -384,7 +384,7 @@ function OAuthStatusMessage({
     case 'idle': {
       const promptText =
         startingMessage ||
-        'OpenClaude can be used with your Claude subscription or billed based on API usage through your Console account.'
+        'CHACRAM can be used with your Claude subscription or billed based on API usage through your Console account.'
 
       const loginOptions = [
         {

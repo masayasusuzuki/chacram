@@ -507,7 +507,7 @@ export function buildProfileSaveMessage(
 
   lines.push(`Profile: ${filePath}`)
   if (options?.activatedInSession) {
-    lines.push('OpenClaude switched to it for this session.')
+    lines.push('CHACRAM switched to it for this session.')
   } else if (options?.activationWarning) {
     lines.push(
       `Saved for next startup. Warning: could not activate it in this session (${options.activationWarning}).`,
@@ -721,7 +721,7 @@ function ProviderChooser({
     options.push({
       label: 'Clear saved profile',
       value: 'clear',
-      description: 'Remove .openclaude-profile.json and return to normal startup',
+      description: 'Remove .chacram-profile.json and return to normal startup',
     })
   }
 
@@ -1288,7 +1288,7 @@ function resolveCodexCredentials(processEnv: NodeJS.ProcessEnv):
       credentials.source === 'env'
         ? 'the current shell environment'
         : credentials.source === 'secure-storage'
-          ? 'OpenClaude secure storage'
+          ? 'CHACRAM secure storage'
         : credentials.authPath ?? DEFAULT_CODEX_BASE_URL,
   }
 }

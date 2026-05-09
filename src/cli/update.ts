@@ -276,7 +276,7 @@ export async function update() {
     } catch (error) {
       process.stderr.write('Error: Failed to install native update\n')
       process.stderr.write(String(error) + '\n')
-      process.stderr.write('Try running "openclaude doctor" for diagnostics\n')
+      process.stderr.write('Try running "chacram doctor" for diagnostics\n')
       await gracefulShutdown(1)
     }
   }
@@ -410,7 +410,7 @@ export async function update() {
       if (useLocalUpdate) {
         process.stderr.write('Try manually updating with:\n')
         process.stderr.write(
-          `  cd ~/.openclaude/local && npm update ${MACRO.PACKAGE_URL}\n`,
+          `  cd ~/.chacram/local && npm update ${MACRO.PACKAGE_URL}\n`,
         )
       } else {
         process.stderr.write('Try running with sudo or fix npm permissions\n')
@@ -425,7 +425,7 @@ export async function update() {
       if (useLocalUpdate) {
         process.stderr.write('Try manually updating with:\n')
         process.stderr.write(
-          `  cd ~/.openclaude/local && npm update ${MACRO.PACKAGE_URL}\n`,
+          `  cd ~/.chacram/local && npm update ${MACRO.PACKAGE_URL}\n`,
         )
       } else {
         process.stderr.write(

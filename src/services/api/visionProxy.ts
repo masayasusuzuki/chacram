@@ -1,11 +1,7 @@
-import Anthropic from '@anthropic-ai/sdk'
+import { GoogleGenAI } from '@google/genai'
 import { getModel } from '../../integrations/index.js'
 import { logForDebugging } from '../../utils/debug.js'
 import type { AssistantMessage, UserMessage } from '../../types/message.js'
-import type { TextBlockParam } from '@anthropic-ai/sdk/resources/index.mjs'
-import { getClaudeAIOAuthTokens } from '../../utils/auth.js'
-import { isEnvTruthy } from '../../utils/envUtils.js'
-import { getOauthConfig } from '../../constants/oauth.js'
 
 // Anthropic-native media block format
 type AnthropicMediaBlock =
@@ -28,7 +24,7 @@ interface MediaPosition {
   parentBlockIndex?: number
 }
 
-const VISION_MODEL = 'claude-sonnet-4-6'
+const VISION_MODEL = 'gemini-2.0-flash'
 const MAX_CONCURRENT = 5
 
 const VISION_PROMPT = `Please provide a thorough and detailed description of this image or document. Include:
@@ -43,7 +39,7 @@ Be comprehensive — your description will be used by another AI to understand t
 
 /**
  * When the current model does not support vision (supportsVision: false),
- * proxy image/document blocks through Anthropic Sonnet to convert them
+ * proxy image/document blocks through Google Gemini to convert them
  * into text descriptions before the non-vision model sees them.
  *
  * Must be called AFTER stripExcessMediaItems so we process at most
@@ -63,13 +59,12 @@ export async function proxyMediaToVisionModel(
     return messagesForAPI
   }
 
-  // STEP 2: Resolve authentication — OAuth token preferred, API key as fallback
-  const oauthToken = getClaudeAIOAuthTokens()?.accessToken
-  const apiKey = process.env.ANTHROPIC_API_KEY
+  // STEP 2: Resolve authentication — GEMINI_API_KEY required
+  const apiKey = process.env.GEMINI_API_KEY
 
-  if (!oauthToken && !apiKey) {
+  if (!apiKey) {
     logForDebugging(
-      'Vision proxy: No auth available (OAuth or ANTHROPIC_API_KEY), replacing media with text stubs',
+      'Vision proxy: No GEMINI_API_KEY available, replacing media with text stubs',
     )
     return replaceMediaWithTextStubs(messagesForAPI)
   }
@@ -79,19 +74,11 @@ export async function proxyMediaToVisionModel(
   if (mediaPositions.length === 0) return messagesForAPI
 
   logForDebugging(
-    `Vision proxy: Converting ${mediaPositions.length} media block(s) to text via Anthropic ${VISION_MODEL}`,
+    `Vision proxy: Converting ${mediaPositions.length} media block(s) to text via Gemini ${VISION_MODEL}`,
   )
 
-  // STEP 4: Create a dedicated Anthropic client (OAuth or API key)
-  const isStagingOAuth =
-    process.env.USER_TYPE === 'ant' && isEnvTruthy(process.env.USE_STAGING_OAUTH)
-
-  const visionClient = oauthToken
-    ? new Anthropic({
-        authToken: oauthToken,
-        ...(isStagingOAuth ? { baseURL: getOauthConfig().BASE_API_URL } : {}),
-      })
-    : new Anthropic({ apiKey: apiKey! })
+  // STEP 4: Create Google GenAI client
+  const visionClient = new GoogleGenAI({ apiKey })
 
   // STEP 5: Process media blocks in parallel batches
   const descriptions = await describeAllMedia(
@@ -121,6 +108,37 @@ function isMediaBlock(block: any): boolean {
 function mediaTypeLabel(block: MediaBlock): string {
   if (block.type === 'image_url') return 'image_url'
   return block.type
+}
+
+/**
+ * Extract base64 data and mime type from any media block format.
+ * Returns null if the block can't be converted to inline data.
+ */
+function extractInlineData(block: MediaBlock): { mimeType: string; data: string } | null {
+  if (block.type === 'image') {
+    return {
+      mimeType: block.source.media_type,
+      data: block.source.data,
+    }
+  }
+  if (block.type === 'document') {
+    return {
+      mimeType: block.source.media_type,
+      data: block.source.data,
+    }
+  }
+  // OpenAI-compatible image_url
+  if (block.type === 'image_url') {
+    const url = block.image_url.url
+    const match = url.match(/^data:([^;]+);base64,(.+)$/)
+    if (match) {
+      return {
+        mimeType: match[1],
+        data: match[2],
+      }
+    }
+  }
+  return null
 }
 
 /**
@@ -177,50 +195,13 @@ function collectMediaPositions(
 }
 
 /**
- * Convert an OpenAI-compatible image_url block to Anthropic image format.
- * The data URL format is: data:{media_type};base64,{data}
- */
-function openAIImageToAnthropic(block: OpenAIImageBlock): AnthropicMediaBlock {
-  const url = block.image_url.url
-  // Parse data URL: "data:image/png;base64,XXXX"
-  const match = url.match(/^data:([^;]+);base64,(.+)$/)
-  if (match) {
-    return {
-      type: 'image',
-      source: {
-        type: 'base64',
-        media_type: match[1],
-        data: match[2],
-      },
-    }
-  }
-  // Non-data URL (e.g. HTTP URL) — Anthropic doesn't support this directly,
-  // but we pass it as a URL-based source
-  return {
-    type: 'image',
-    source: {
-      type: 'url',
-      media_type: 'image/png',
-      data: url,
-    },
-  }
-}
-
-/**
- * Check if a media block is in OpenAI-compatible format.
- */
-function isOpenAIFormat(block: MediaBlock): block is OpenAIImageBlock {
-  return block.type === 'image_url'
-}
-
-/**
- * Call Anthropic Sonnet for each media block, processing in parallel
+ * Call Gemini for each media block, processing in parallel
  * batches of MAX_CONCURRENT. Returns a description string for each block
  * (same length as positions), falling back to [image]/[document] stubs
  * on any failure.
  */
 async function describeAllMedia(
-  client: Anthropic,
+  client: GoogleGenAI,
   positions: MediaPosition[],
   signal?: AbortSignal,
 ): Promise<string[]> {
@@ -237,7 +218,7 @@ async function describeAllMedia(
     const batchPromises = batch.map(async (pos, batchIdx) => {
       const globalIdx = batchStart + batchIdx
       try {
-        const text = await describeMediaBlock(client, pos, signal)
+        const text = await describeMediaBlock(client, pos)
         if (text) {
           const label = mediaTypeLabel(pos.mediaBlock)
           logForDebugging(
@@ -276,39 +257,33 @@ async function describeAllMedia(
 }
 
 /**
- * Send a single media block to Anthropic Sonnet for description.
- * Converts OpenAI-compatible image_url blocks to Anthropic format first.
+ * Send a single media block to Gemini for description.
  */
 async function describeMediaBlock(
-  client: Anthropic,
+  client: GoogleGenAI,
   pos: MediaPosition,
-  signal?: AbortSignal,
 ): Promise<string> {
-  // Convert OpenAI-compatible image_url to Anthropic format
-  const anthropicBlock: AnthropicMediaBlock = isOpenAIFormat(pos.mediaBlock)
-    ? openAIImageToAnthropic(pos.mediaBlock)
-    : pos.mediaBlock
+  const inlineData = extractInlineData(pos.mediaBlock)
+  if (!inlineData) {
+    throw new Error(
+      `Cannot extract inline data from ${mediaTypeLabel(pos.mediaBlock)}`,
+    )
+  }
 
-  const response = await client.messages.create(
-    {
-      model: VISION_MODEL,
-      max_tokens: 4096,
-      temperature: 0,
-      messages: [
-        {
-          role: 'user' as const,
-          content: [
-            { type: 'text' as const, text: VISION_PROMPT },
-            anthropicBlock as any,
-          ],
-        },
-      ],
-    },
-    signal ? { signal } : undefined,
-  )
+  const response = await client.models.generateContent({
+    model: VISION_MODEL,
+    contents: [
+      {
+        role: 'user',
+        parts: [
+          { text: VISION_PROMPT },
+          { inlineData: { mimeType: inlineData.mimeType, data: inlineData.data } },
+        ],
+      },
+    ],
+  })
 
-  const textContent = response.content.find(c => c.type === 'text')
-  const text = (textContent as TextBlockParam)?.text
+  const text = response.text
   if (!text) {
     throw new Error(`No text in vision response for ${mediaTypeLabel(pos.mediaBlock)}`)
   }
@@ -384,7 +359,7 @@ function applyDescriptions(
 }
 
 /**
- * Fallback used when ANTHROPIC_API_KEY is not configured.
+ * Fallback used when GEMINI_API_KEY is not configured.
  * Replaces image/document/image_url blocks with plain text stubs.
  */
 function replaceMediaWithTextStubs(

@@ -388,9 +388,9 @@ function PermissionRulesTab(t0) {
     let t8;
     if ($[10] === Symbol.for("react.memo_cache_sentinel")) {
       t8 = {
-        allow: "OpenClaude won't ask before using allowed tools.",
-        ask: "OpenClaude will always ask for confirmation before using these tools.",
-        deny: "OpenClaude will always reject requests to use denied tools."
+        allow: "CHACRAM won't ask before using allowed tools.",
+        ask: "CHACRAM will always ask for confirmation before using these tools.",
+        deny: "CHACRAM will always reject requests to use denied tools."
       };
       $[10] = t8;
     } else {

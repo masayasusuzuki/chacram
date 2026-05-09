@@ -38,7 +38,7 @@ export function getCandidateLocalInstallDirs(options?: {
 
 function getCandidateLocalBinaryPaths(localInstallDir: string): string[] {
   return [
-    join(localInstallDir, 'node_modules', '.bin', 'openclaude'),
+    join(localInstallDir, 'node_modules', '.bin', 'chacram'),
     join(localInstallDir, 'node_modules', '.bin', 'claude'),
   ]
 }
@@ -46,13 +46,13 @@ function getCandidateLocalBinaryPaths(localInstallDir: string): string[] {
 export function isManagedLocalInstallationPath(execPath: string): boolean {
   const normalizedExecPath = execPath.replace(/\\+/g, '/')
   return (
-    normalizedExecPath.includes('/.openclaude/local/node_modules/') ||
+    normalizedExecPath.includes('/.chacram/local/node_modules/') ||
     normalizedExecPath.includes('/.claude/local/node_modules/')
   )
 }
 
 export function getLocalClaudePath(): string {
-  return join(getLocalInstallDir(), 'openclaude')
+  return join(getLocalInstallDir(), 'chacram')
 }
 
 /**

@@ -1,0 +1,17 @@
+{
+  "mcpServers": {
+    "chrome-devtools": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "chrome-devtools-mcp@latest",
+        "--user-data-dir",
+        "/Users/suzukimotoyasumain/.cache/chrome-devtools-mcp/youtube-agents-profile"
+      ]
+    },
+    "substack-mcp": {
+      "command": "/Users/suzukimotoyasumain/Library/Python/3.11/bin/substack-mcp",
+      "args": []
+    }
+  }
+}

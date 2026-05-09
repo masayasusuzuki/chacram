@@ -300,9 +300,9 @@ export function getRelativeSettingsFilePathForSource(
 ): string {
   switch (source) {
     case 'projectSettings':
-      return '.openclaude/settings.json'
+      return '.chacram/settings.json'
     case 'localSettings':
-      return '.openclaude/settings.local.json'
+      return '.chacram/settings.local.json'
   }
 }
 

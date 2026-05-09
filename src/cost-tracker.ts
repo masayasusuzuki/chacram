@@ -273,9 +273,9 @@ function round(number: number, precision: number): number {
 // Env-gated verbose token usage log. Treated as a boolean regardless of
 // value specifics — any truthy-ish string switches it on. `verbose` is the
 // documented keyword but we accept `1`/`true` for ergonomic parity with
-// other OPENCLAUDE_* flags.
+// other CHACRAM_* flags.
 function shouldLogTokenUsageVerbose(): boolean {
-  const v = (process.env.OPENCLAUDE_LOG_TOKEN_USAGE ?? '').trim().toLowerCase()
+  const v = (process.env.CHACRAM_LOG_TOKEN_USAGE ?? '').trim().toLowerCase()
   if (!v) return false
   return v !== '0' && v !== 'false' && v !== 'off'
 }
