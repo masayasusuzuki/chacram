@@ -34,7 +34,8 @@ import { useTerminalSize } from '../../hooks/useTerminalSize.js';
 import { useTypeahead } from '../../hooks/useTypeahead.js';
 import type { BorderTextOptions } from '../../ink/render-border.js';
 import { stringWidth } from '../../ink/stringWidth.js';
-import { Box, type ClickEvent, type Key, Text, useInput } from '../../ink.js';
+import { Box, type ClickEvent, type DOMElement, type Key, Text, useInput } from '../../ink.js';
+import { nodeCache } from '../../ink/node-cache.js';
 import { useOptionalKeybindingContext } from '../../keybindings/KeybindingContext.js';
 import { getShortcutDisplay } from '../../keybindings/shortcutFormat.js';
 import { useKeybinding, useKeybindings } from '../../keybindings/useKeybinding.js';
@@ -257,6 +258,11 @@ function PromptInput({
   // without clobbering a pending internal keystroke during render.
   const lastInternalInputRef = React.useRef(input);
   const lastPropInputRef = React.useRef(input);
+  // Input Box screen position; captured from ClickEvent and nodeCache
+  // and used by useTextInput's Ink selection → Cursor offset coordinate
+  // conversion.
+  const selectionSyncRef = useRef<{ x: number; y: number } | null>(null);
+  const inputBoxRef = useRef<DOMElement | null>(null);
   React.useLayoutEffect(() => {
     if (input === lastPropInputRef.current) {
       return;
@@ -2034,6 +2040,11 @@ function PromptInput({
   // wide chars, wrapped lines, and clamps past-end clicks to line end.
   const maxVisibleLines = isFullscreenEnvEnabled() ? Math.max(MIN_INPUT_VIEWPORT_LINES, Math.floor(rows / 2) - PROMPT_FOOTER_LINES) : undefined;
   const handleInputClick = useCallback((e: ClickEvent) => {
+    // Capture the input Box's absolute screen position for mouse
+    // selection coordinate conversion (Ink selection coords are
+    // absolute; we need local coords for offsetAt).
+    selectionSyncRef.current = { x: e.col - e.localCol, y: e.row - e.localRow };
+
     // During history search the displayed text is historyMatch, not
     // input, and showCursor is false anyway — skip rather than
     // compute an offset against the wrong string.
@@ -2046,6 +2057,21 @@ function PromptInput({
     });
     setCursorOffset(offset);
   }, [input, textInputColumns, isSearchingHistory, cursorOffset, maxVisibleLines]);
+
+  // ── Capture input Box screen position from nodeCache ──
+  // The onClick handler only fires on click-without-drag, so mouse-drag
+  // selection won't set selectionSyncRef. We use a useEffect to read
+  // the Box position from Ink's nodeCache after every render.
+  useEffect(() => {
+    const el = inputBoxRef.current
+    if (el) {
+      const rect = nodeCache.get(el)
+      if (rect) {
+        selectionSyncRef.current = { x: rect.x, y: rect.y }
+      }
+    }
+  })
+
   const handleOpenTasksDialog = useCallback((taskId?: string) => setShowBashesDialog(taskId ?? true), [setShowBashesDialog]);
   const placeholder = showPromptSuggestion && promptSuggestion ? promptSuggestion : defaultPlaceholder;
 
@@ -2245,7 +2271,8 @@ function PromptInput({
     } : undefined,
     highlights: combinedHighlights,
     inlineGhostText,
-    inputFilter: lazySpaceInputFilter
+    inputFilter: lazySpaceInputFilter,
+    selectionSyncRef,
   };
   const getBorderColor = (): keyof Theme => {
     const modeColors: Record<string, keyof Theme> = {
@@ -2296,14 +2323,14 @@ function PromptInput({
           </Text>
           <Box flexDirection="row" width="100%">
             <PromptInputModeIndicator mode={mode} isLoading={isLoading} viewingAgentName={viewingAgentName} viewingAgentColor={viewingAgentColor} />
-            <Box flexGrow={1} flexShrink={1} onClick={handleInputClick}>
+            <Box ref={inputBoxRef} flexGrow={1} flexShrink={1} onClick={handleInputClick}>
               {textInputElement}
             </Box>
           </Box>
           <Text color={swarmBanner.bgColor}>{'─'.repeat(columns)}</Text>
         </> : <Box flexDirection="row" alignItems="flex-start" justifyContent="flex-start" borderColor={getBorderColor()} borderStyle="round" borderLeft={false} borderRight={false} borderBottom width="100%" borderText={buildBorderText(showFastIcon ?? false, showFastIconHint, fastModeCooldown)}>
           <PromptInputModeIndicator mode={mode} isLoading={isLoading} viewingAgentName={viewingAgentName} viewingAgentColor={viewingAgentColor} />
-          <Box flexGrow={1} flexShrink={1} onClick={handleInputClick}>
+          <Box ref={inputBoxRef} flexGrow={1} flexShrink={1} onClick={handleInputClick}>
             {textInputElement}
           </Box>
         </Box>}

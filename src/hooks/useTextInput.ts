@@ -1,6 +1,7 @@
-import { useLayoutEffect, useRef, useState } from 'react'
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { isInputModeCharacter } from 'src/components/PromptInput/inputModes.js'
 import { useNotifications } from 'src/context/notifications.js'
+import { setClipboard } from '../ink/termio/osc.js'
 import stripAnsi from 'strip-ansi'
 import { markBackslashReturnUsed } from '../commands/terminalSetup/terminalSetup.js'
 import { addToHistory } from '../history.js'
@@ -21,6 +22,7 @@ import {
 } from '../utils/Cursor.js'
 import { env } from '../utils/env.js'
 import { isFullscreenEnvEnabled } from '../utils/fullscreen.js'
+import { useSelection } from '../ink/hooks/use-selection.js'
 import type { ImageDimensions } from '../utils/imageResizer.js'
 import { isModifierPressed, prewarmModifiers } from '../utils/modifiers.js'
 import { useDoublePress } from './useDoublePress.js'
@@ -69,6 +71,10 @@ export type UseTextInputProps = {
   inputFilter?: (input: string, key: Key) => string
   inlineGhostText?: InlineGhostText
   dim?: (text: string) => string
+  /** Ref to the input Box's screen (x, y) position, used to convert
+   *  Ink absolute selection coordinates to viewport-relative coords
+   *  for mouse-drag selection sync. */
+  selectionSyncRef?: React.MutableRefObject<{ x: number; y: number } | null>
 }
 
 export function useTextInput({
@@ -95,6 +101,8 @@ export function useTextInput({
   inputFilter,
   inlineGhostText,
   dim,
+  selectionSyncRef,
+  focus = false,
 }: UseTextInputProps): TextInputState {
   // Pre-warm the modifiers module for Apple Terminal (has internal guard, safe to call multiple times)
   if (env.terminal === 'Apple_Terminal') {
@@ -106,20 +114,37 @@ export function useTextInput({
   const [renderState, setRenderState] = useState(() => ({
     value: originalValue,
     offset: externalOffset,
+    selectionAnchor: -1, // -1 = no selection
   }))
   const liveValueRef = useRef(originalValue)
   const liveOffsetRef = useRef(externalOffset)
+  const liveSelectionAnchorRef = useRef(-1)
   const lastSeenPropsRef = useRef({
     value: originalValue,
     offset: externalOffset,
   })
-  const updateRenderedInput = (nextValue: string, nextOffset: number): void => {
+  const updateRenderedInput = (
+    nextValue: string,
+    nextOffset: number,
+    nextSelectionAnchor = -1,
+  ): void => {
     liveValueRef.current = nextValue
     liveOffsetRef.current = nextOffset
+    liveSelectionAnchorRef.current = nextSelectionAnchor
+    // Sync lastSeenPropsRef so the useLayoutEffect below doesn't
+    // reset selectionAnchor when onOffsetChange triggers a parent
+    // re-render with the same offset value.
+    lastSeenPropsRef.current = { value: nextValue, offset: nextOffset }
     setRenderState(prev =>
-      prev.value === nextValue && prev.offset === nextOffset
+      prev.value === nextValue &&
+      prev.offset === nextOffset &&
+      prev.selectionAnchor === nextSelectionAnchor
         ? prev
-        : { value: nextValue, offset: nextOffset },
+        : {
+            value: nextValue,
+            offset: nextOffset,
+            selectionAnchor: nextSelectionAnchor,
+          },
     )
   }
   useLayoutEffect(() => {
@@ -139,18 +164,33 @@ export function useTextInput({
 
   const value = renderState.value
   const offset = renderState.offset
+  const selectionAnchor = renderState.selectionAnchor
   const getLiveValue = (): string => liveValueRef.current
   const getLiveCursor = (): Cursor =>
-    Cursor.fromText(liveValueRef.current, columns, liveOffsetRef.current)
-  const setValue = (nextValue: string, nextOffset = liveOffsetRef.current): void => {
+    Cursor.fromText(
+      liveValueRef.current,
+      columns,
+      liveOffsetRef.current,
+      liveSelectionAnchorRef.current,
+    )
+  const setValue = (
+    nextValue: string,
+    nextOffset = liveOffsetRef.current,
+    nextSelectionAnchor = liveSelectionAnchorRef.current,
+  ): void => {
     const previousValue = liveValueRef.current
     const previousOffset = liveOffsetRef.current
+    const previousSelectionAnchor = liveSelectionAnchorRef.current
 
-    if (previousValue === nextValue && previousOffset === nextOffset) {
+    if (
+      previousValue === nextValue &&
+      previousOffset === nextOffset &&
+      previousSelectionAnchor === nextSelectionAnchor
+    ) {
       return
     }
 
-    updateRenderedInput(nextValue, nextOffset)
+    updateRenderedInput(nextValue, nextOffset, nextSelectionAnchor)
 
     if (previousValue !== nextValue) {
       onChange(nextValue)
@@ -160,15 +200,27 @@ export function useTextInput({
       onOffsetChange(nextOffset)
     }
   }
-  const setOffset = (nextOffset: number): void => {
-    if (nextOffset === liveOffsetRef.current) {
+  const setOffset = (nextOffset: number, nextSelectionAnchor = liveSelectionAnchorRef.current): void => {
+    if (
+      nextOffset === liveOffsetRef.current &&
+      nextSelectionAnchor === liveSelectionAnchorRef.current
+    ) {
       return
     }
 
-    updateRenderedInput(liveValueRef.current, nextOffset)
+    updateRenderedInput(liveValueRef.current, nextOffset, nextSelectionAnchor)
     onOffsetChange(nextOffset)
   }
-  const cursor = Cursor.fromText(value, columns, offset)
+  /**
+   * Clear the selection (if any). Called after non-Shift cursor moves and
+   * text insertion. Returns false if there was no selection to clear.
+   */
+  const clearSelectionIfAny = (finalOffset: number): void => {
+    if (liveSelectionAnchorRef.current >= 0) {
+      updateRenderedInput(liveValueRef.current, finalOffset, -1)
+    }
+  }
+  const cursor = Cursor.fromText(value, columns, offset, selectionAnchor)
   const { addNotification, removeNotification } = useNotifications()
 
   const handleCtrlC = useDoublePress(
@@ -179,13 +231,40 @@ export function useTextInput({
     () => {
       const currentValue = getLiveValue()
       if (currentValue) {
-        updateRenderedInput('', 0)
+        updateRenderedInput('', 0, -1)
         onChange('')
         onOffsetChange(0)
         onHistoryReset?.()
       }
     },
   )
+
+  /** Ctrl+C with selection → copy to clipboard, clear selection. */
+  async function copySelection(): Promise<boolean> {
+    const cursor = getLiveCursor()
+    if (!cursor.hasSelection()) return false
+    const text = cursor.selectedText()
+    if (!text) return false
+    // Use the platform-aware setClipboard (pbcopy / OSC 52 / tmux)
+    try {
+      const seq = await setClipboard(text)
+      process.stdout.write(seq)
+    } catch {
+      // Best-effort: clipboard may be unavailable
+    }
+    updateRenderedInput(
+      cursor.text,
+      cursor.offset,
+      -1, // clear selection
+    )
+    addNotification({
+      key: 'selection-copied',
+      text: text.length > 50 ? `Copied ${text.length} chars` : `Copied: ${text}`,
+      priority: 'medium',
+      timeoutMs: 1500,
+    })
+    return true
+  }
 
   // NOTE(keybindings): This escape handler is intentionally NOT migrated to the keybindings system.
   // It's a text-level double-press escape for clearing input, not an action-level keybinding.
@@ -301,7 +380,16 @@ export function useTextInput({
   const handleCtrl = mapInput([
     ['a', () => getLiveCursor().startOfLine()],
     ['b', () => getLiveCursor().left()],
-    ['c', handleCtrlC],
+    ['c', () => {
+      // With active selection: copy to clipboard (fire-and-forget)
+      const cursor = getLiveCursor()
+      if (cursor.hasSelection()) {
+        void copySelection()
+        return undefined
+      }
+      // No selection: normal Ctrl+C behavior
+      return handleCtrlC()
+    }],
     ['d', handleCtrlD],
     ['e', () => getLiveCursor().endOfLine()],
     ['f', () => getLiveCursor().right()],
@@ -400,35 +488,68 @@ export function useTextInput({
   }
 
   function mapKey(key: Key, cursor: Cursor): InputMapper {
+    // ── Selection-aware helpers ────────────────────────────
+    const extendOrStart = (getNext: () => Cursor): MaybeCursor => {
+      const next = getNext()
+      const anchor =
+        cursor.hasSelection()
+          ? cursor.selection
+          : cursor.offset // first press: lock anchor at current pos
+      return next.withSelectionAnchor(anchor)
+    }
+    const moveWithClear = (getNext: () => Cursor): Cursor => {
+      const next = getNext()
+      return next.clearSelection()
+    }
     switch (true) {
       case key.escape:
         return () => {
-          // Skip when a keybinding context (e.g. Autocomplete) owns escape.
-          // useKeybindings can't shield us via stopImmediatePropagation —
-          // BaseTextInput's useInput registers first (child effects fire
-          // before parent effects), so this handler has already run by the
-          // time the keybinding's handler stops propagation.
           if (disableEscapeDoublePress) return cursor
           handleEscape()
-          // Return the current cursor unchanged - handleEscape manages state internally
           return cursor
         }
+      // Shift+Arrow — extend selection
+      case key.leftArrow && key.shift:
+        return () => extendOrStart(() => cursor.left())
+      case key.rightArrow && key.shift:
+        return () => extendOrStart(() => cursor.right())
+      case key.upArrow && key.shift:
+        return () => extendOrStart(() => cursor.up())
+      case key.downArrow && key.shift:
+        return () => extendOrStart(() => cursor.down())
+      case key.home && key.shift:
+        return () => extendOrStart(() => cursor.startOfLine())
+      case key.end && key.shift:
+        return () => extendOrStart(() => cursor.endOfLine())
+      // Ctrl+Shift+Arrow — extend by word
+      case key.leftArrow && key.shift && (key.ctrl || key.meta || key.fn):
+        return () => extendOrStart(() => cursor.prevWord())
+      case key.rightArrow && key.shift && (key.ctrl || key.meta || key.fn):
+        return () => extendOrStart(() => cursor.nextWord())
+      // Non-shift movement — clear selection
       case key.leftArrow && (key.ctrl || key.meta || key.fn):
-        return () => cursor.prevWord()
+        return () => moveWithClear(() => cursor.prevWord())
       case key.rightArrow && (key.ctrl || key.meta || key.fn):
-        return () => cursor.nextWord()
+        return () => moveWithClear(() => cursor.nextWord())
       case key.backspace:
+        // Delete selection if any
+        if (cursor.hasSelection()) {
+          return () => cursor.deleteSelection().clearSelection()
+        }
         return key.meta || key.ctrl
           ? killWordBefore
           : () => cursor.deleteTokenBefore() ?? cursor.backspace()
       case key.delete:
+        if (cursor.hasSelection()) {
+          return () => cursor.deleteSelection().clearSelection()
+        }
         return key.meta ? killToLineEnd : () => cursor.del()
       case key.ctrl:
         return handleCtrl
       case key.home:
-        return () => cursor.startOfLine()
+        return () => moveWithClear(() => cursor.startOfLine())
       case key.end:
-        return () => cursor.endOfLine()
+        return () => moveWithClear(() => cursor.endOfLine())
       case key.pageDown:
         // In fullscreen mode, PgUp/PgDn scroll the message viewport instead
         // of moving the cursor — no-op here, ScrollKeybindingHandler handles it.
@@ -455,13 +576,19 @@ export function useTextInput({
       case key.tab:
         return () => cursor
       case key.upArrow && !key.shift:
-        return upOrHistoryUp
+        return () => {
+          const c = upOrHistoryUp()
+          return c ? c.clearSelection() : undefined
+        }
       case key.downArrow && !key.shift:
-        return downOrHistoryDown
+        return () => {
+          const c = downOrHistoryDown()
+          return c ? c.clearSelection() : undefined
+        }
       case key.leftArrow:
-        return () => cursor.left()
+        return () => moveWithClear(() => cursor.left())
       case key.rightArrow:
-        return () => cursor.right()
+        return () => moveWithClear(() => cursor.right())
       default: {
         return function (input: string) {
           switch (true) {
@@ -485,10 +612,15 @@ export function useTextInput({
                 // eslint-disable-next-line custom-rules/no-lookbehind-regex -- .replace(re, str) on 1-2 char keystrokes: no-match returns same string (Object.is), regex never runs
                 .replace(/(?<=[^\\\r\n])\r$/, '')
                 .replace(/\r/g, '\n')
-              if (cursor.isAtStart() && isInputModeCharacter(input)) {
-                return cursor.insert(text).left()
+              // If there's an active selection, replace it with the new text
+              const base =
+                cursor.hasSelection()
+                  ? cursor.deleteSelection()
+                  : cursor
+              if (base.isAtStart() && isInputModeCharacter(input)) {
+                return base.insert(text).left().clearSelection()
               }
-              return cursor.insert(text)
+              return base.insert(text).clearSelection()
             }
           }
         }
@@ -558,8 +690,11 @@ export function useTextInput({
 
     const nextCursor = mapKey(key, currentCursor)(filteredInput)
     if (nextCursor) {
-      if (!currentCursor.equals(nextCursor)) {
-        setValue(nextCursor.text, nextCursor.offset)
+      if (
+        !currentCursor.equals(nextCursor) ||
+        currentCursor.selection !== nextCursor.selection
+      ) {
+        setValue(nextCursor.text, nextCursor.offset, nextCursor.selection)
       }
       // SSH-coalesced Enter: on slow links, "o" + Enter can arrive as one
       // chunk "o\r". parseKeypress only matches s === '\r', so it hit the
@@ -588,6 +723,64 @@ export function useTextInput({
       : undefined
 
   const cursorPos = cursor.getPosition()
+
+  // ── Ink mouse selection → Cursor sync (座標直変換アプローチ) ──
+  // Ink の画面レベル選択（マウスドラッグ）を検知し、anchor/focus の
+  // 絶対画面座標を Box の相対座標に変換 → offsetAt() で文字列オフセットに
+  // → Cursor.selection に反映する。
+  // テキストマッチではなく座標変換なので、複数一致/折り返し/全角問題がない。
+  const inkSel = useSelection()
+  useEffect(() => {
+    if (!focus) return
+    let prevDragging = false
+    const unsub = inkSel.subscribe(() => {
+      const state = inkSel.getState()
+      if (!state) return
+      const isDragging = state.isDragging
+      const dragJustEnded = !isDragging && prevDragging
+      prevDragging = isDragging
+
+      if (!dragJustEnded) return
+      if (!state.anchor || !state.focus) return
+
+      // 画面座標 → 入力 Box 相対座標
+      const box = selectionSyncRef?.current
+      if (!box) return
+
+      const relAnchorRow = state.anchor.row - box.y
+      const relAnchorCol = state.anchor.col - box.x
+      const relFocusRow = state.focus.row - box.y
+      const relFocusCol = state.focus.col - box.x
+
+      // viewport scroll オフセットを考慮して絶対行番号を計算
+      const inputValue = liveValueRef.current
+      const tempCursor = Cursor.fromText(inputValue, columns, liveOffsetRef.current)
+      const viewportStartLine = tempCursor.getViewportStartLine(maxVisibleLines)
+
+      const anchorLine = relAnchorRow + viewportStartLine
+      const focusLine = relFocusRow + viewportStartLine
+
+      // 画面座標 → 文字列オフセット変換（getOffsetFromPosition が
+      // 表示幅→文字列インデックス、行頭空白、CJK を全て考慮する）
+      const anchorOffset = tempCursor.measuredText.getOffsetFromPosition({
+        line: anchorLine,
+        column: relAnchorCol,
+      })
+      const focusOffset = tempCursor.measuredText.getOffsetFromPosition({
+        line: focusLine,
+        column: relFocusCol,
+      })
+
+      if (anchorOffset !== focusOffset) {
+        updateRenderedInput(inputValue, focusOffset, anchorOffset)
+        onOffsetChange?.(focusOffset)
+      }
+
+      // Ink の画面上のハイライトをクリア（以降は Cursor の反転表示に任せる）
+      inkSel.clearSelection()
+    })
+    return unsub
+  }, [focus, inkSel, selectionSyncRef, columns, maxVisibleLines, onOffsetChange])
 
   return {
     onInput,

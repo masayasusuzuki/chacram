@@ -1,10 +1,10 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 
 /**
- * OpenClaude — Claude Code with any LLM
+ * CHACRAM — unleash creativity. No limits.
  *
  * If dist/cli.mjs exists (built), run that.
- * Otherwise, tell the user to build first or use `bun run dev`.
+ * Otherwise tell the user to build first or use `bun run dev`.
  */
 
 import { existsSync } from 'fs'
@@ -18,7 +18,7 @@ if (existsSync(distPath)) {
   await import(pathToFileURL(distPath).href)
 } else {
   console.error(`
-  openclaude: dist/cli.mjs not found.
+  chacram: dist/cli.mjs not found.
 
   Build first:
     bun run build

@@ -24,7 +24,7 @@ interface MediaPosition {
   parentBlockIndex?: number
 }
 
-const VISION_MODEL = 'gemini-2.0-flash'
+const VISION_MODEL = process.env.GEMINI_MODEL || 'gemini-2.5-flash'
 const MAX_CONCURRENT = 5
 
 const VISION_PROMPT = `Please provide a thorough and detailed description of this image or document. Include:
@@ -63,10 +63,9 @@ export async function proxyMediaToVisionModel(
   const apiKey = process.env.GEMINI_API_KEY
 
   if (!apiKey) {
-    logForDebugging(
-      'Vision proxy: No GEMINI_API_KEY available, replacing media with text stubs',
-    )
-    return replaceMediaWithTextStubs(messagesForAPI)
+    const errMsg = '[Vision proxy error: GEMINI_API_KEY が未設定です。.env に GEMINI_API_KEY=... を設定してください。取得元: https://aistudio.google.com/app/apikey]'
+    logForDebugging(`Vision proxy: ${errMsg}`)
+    throw new Error(errMsg)
   }
 
   // STEP 3: Walk messages and collect all media block positions
@@ -235,7 +234,9 @@ async function describeAllMedia(
         return {
           globalIdx,
           text:
-            pos.mediaBlock.type === 'document' ? '[document]' : '[image]',
+            `[Vision proxy error: Gemini API が ${mediaTypeLabel(pos.mediaBlock)} の解析に失敗しました — ${
+              err instanceof Error ? err.message : String(err)
+            }]`,
         }
       }
     })

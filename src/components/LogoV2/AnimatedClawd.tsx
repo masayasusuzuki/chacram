@@ -1,38 +1,21 @@
 import { c as _c } from "react-compiler-runtime";
 import React from 'react';
 import { Box } from '../../ink.js';
-import { Clawd, type UFOPose } from './Clawd.js';
+import { Clawd } from './Clawd.js';
 
-// ─── UFO Animation ───────────────────────────────────────────────────────
-// Uses React state to alternate between 'default' and 'hovering' poses,
-// creating a subtle hovering effect (tractor beam extends).
-// Cycles are staggered by a small random offset per mount so multiple
-// instances don't sync, which would look robotic.
-// ─────────────────────────────────────────────────────────────────────────
+// Block text logo is static — no animation needed.
+// Wrapper preserved for API compatibility with LogoV2.
 
 export function AnimatedClawd() {
-  const $ = _c(2);
-  const [pose, setPose] = React.useState<UFOPose>('default');
-
-  React.useEffect(() => {
-    let frame = 0;
-    const interval = setInterval(() => {
-      frame++;
-      if (frame % 20 === 0) {
-        setPose(p => (p === 'default' ? 'hovering' : 'default'));
-      }
-    }, 100);
-    return () => clearInterval(interval);
-  }, []);
-
+  const $ = _c(1);
   let t0: React.ReactNode;
-  if ($[0] !== pose) {
+  if ($[0] !== true) {
     t0 = (
       <Box marginY={1}>
-        <Clawd pose={pose} />
+        <Clawd />
       </Box>
     );
-    $[0] = pose;
+    $[0] = true;
     $[1] = t0;
   } else {
     t0 = $[1];

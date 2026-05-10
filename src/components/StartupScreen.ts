@@ -87,11 +87,11 @@ function joinChars(chars: string[][]): string[] {
 
 // ─── CHACRAM Logo ──────────────────────────────────────────────────────────
 
-const _C = norm([' █████╗ ', '██╔══██╗', '██║     ', '██║     ', '╚█████╔╝', ' ╚════╝ '])
-const _H = norm(['██╗  ██╗', '██║  ██║', '███████║', '██╔══██║', '██║  ██║', '╚═╝  ╚═╝'])
-const _A = norm([' █████╗ ', '██╔══██╗', '███████║', '██╔══██║', '██║  ██║', '╚═╝  ╚═╝'])
-const _R = norm(['██████╗ ', '██╔══██╗', '██████╔╝', '██╔══██╗', '██║  ██║', '╚═╝  ╚═╝'])
-const _M = norm(['██╗  ██╗', '███╗███║', '███████║', '██╔███║', '██║╚██║', '╚═╝ ╚═╝'])
+const _C = norm([' ██████╗', '██╔════╝', '██║     ', '██║     ', '███████╗', '╚══════╝'])
+const _H = norm(['██╗  ██╗', '██║  ██║', '████████╣', '██║  ██║', '██║  ██║', '╚═╝  ╚═╝'])
+const _A = norm([' ██████╗ ', '██╔═══██╗', '████████║', '██╔═══██║', '██║   ██║', '╚═╝   ╚═╝'])
+const _R = norm(['████████╗', '██╔══╗██║', '████████╣', '██╔══██╗ ', '██║  ██║ ', '╚═╝  ╚═╝ '])
+const _M = norm(['████╗ ████╗', '██╔████╔██║', '██║╚██╔╝██║', '██║ ╚═╝ ██║', '██║     ██║', '╚═╝     ╚═╝'])
 
 const LOGO_CHACRAM = joinChars([_C, _H, _A, _C, _R, _A, _M])
 
@@ -257,4 +257,24 @@ export function printStartupScreen(modelOverride?: string): void {
   out.push('')
 
   process.stdout.write(out.join('\n') + '\n')
+
+  // Pause before Ink takes over the terminal (alternate screen mode would
+  // otherwise wipe this splash instantly). Skippable via env var for CI/scripts.
+  if (process.stdout.isTTY && !process.env.CHACRAM_SKIP_CONFIRM) {
+    process.stdout.write(`  ${DIM}${rgb(...DIMCOL)}Press Enter to continue...${RESET}`)
+    try {
+      const { readSync, openSync, closeSync } = require('fs') as typeof import('fs')
+      const fd = openSync('/dev/tty', 'r')
+      const buf = Buffer.alloc(1)
+      // Read one byte (Enter or any key). Loop until newline to flush trailing chars.
+      while (true) {
+        readSync(fd, buf, 0, 1, null)
+        if (buf[0] === 0x0a || buf[0] === 0x0d) break
+      }
+      closeSync(fd)
+    } catch {
+      // Fallback: silent no-op if /dev/tty isn't available.
+    }
+    process.stdout.write('\n')
+  }
 }

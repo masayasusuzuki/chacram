@@ -189,7 +189,8 @@ export class Cursor {
   constructor(
     readonly measuredText: MeasuredText,
     offset: number = 0,
-    readonly selection: number = 0,
+    /** -1 = no selection. Non-negative and ≠ offset = selection anchor active. */
+    readonly selection: number = -1,
   ) {
     // it's ok for the cursor to be 1 char beyond the end of the string
     this.offset = Math.max(0, Math.min(this.text.length, offset))
@@ -199,7 +200,7 @@ export class Cursor {
     text: string,
     columns: number,
     offset: number = 0,
-    selection: number = 0,
+    selection: number = -1,
   ): Cursor {
     // make MeasuredText on less than columns width, to account for cursor
     return new Cursor(new MeasuredText(text, columns - 1), offset, selection)
@@ -236,6 +237,59 @@ export class Cursor {
     return allLines[endLine]?.startOffset ?? this.text.length
   }
 
+  /**
+   * Wrap `invert` calls safely — chalk.inverse adds SGR 7/27 pairs.
+   * To avoid broken nesting when cursor is inside a selected span we
+   * split text into segments and apply invert per-segment.
+   */
+  private invertSelected(text: string, invert: (t: string) => string): string {
+    return text.length > 0 ? invert(text) : ''
+  }
+
+  /**
+   * Build a line that has selection highlighting. Returns
+   * `{ display, cursorIndex }` where cursorIndex is the grapheme index
+   * within `display` that should get the cursor, or -1 if the cursor is
+   * not on this line.
+   */
+  private renderLineWithSelection(
+    rawLine: string,
+    lineCharStart: number,
+    invert: (text: string) => string,
+    cursorLine: number,
+    cursorCol: number,
+    currentLineIdx: number,
+    selStart: number,
+    selEnd: number,
+    isLastLine: boolean,
+  ): { display: string; cursorCol: number } {
+    const lineLen = rawLine.length
+    const localSelStart = Math.max(0, selStart - lineCharStart)
+    const localSelEnd = Math.min(lineLen, selEnd - lineCharStart)
+    const hasSelectionOnLine =
+      this.hasSelection() && localSelStart < localSelEnd
+    const isCursorLine = currentLineIdx === cursorLine
+
+    if (!hasSelectionOnLine) {
+      // Selection doesn't overlap this line — fall through
+      return { display: rawLine, cursorCol: cursorCol }
+    }
+
+    // Build the line: before (normal), selected (inverted), after (normal)
+    const before = rawLine.slice(0, localSelStart)
+    const selected = rawLine.slice(localSelStart, localSelEnd)
+    const after = rawLine.slice(localSelEnd)
+
+    const display =
+      before + this.invertSelected(selected, invert) + after
+
+    // Adjust cursor column: if cursor is inside the selected range the
+    // ANSI codes shift display width, but ink's cursor placement uses the
+    // original (pre-ANSI) column so we keep it as-is. If the cursor lands
+    // directly on the first char of `after` it stays at the correct column.
+    return { display, cursorCol: cursorCol }
+  }
+
   render(
     cursorChar: string,
     mask: string,
@@ -243,13 +297,14 @@ export class Cursor {
     ghostText?: { text: string; dim: (text: string) => string },
     maxVisibleLines?: number,
   ) {
-    const { line, column } = this.getPosition()
+    const { line: cursorLine, column: cursorCol } = this.getPosition()
+    const wrappedLines = this.measuredText.getWrappedLines()
     const allLines = mask
       ? new MeasuredText(
           maskTextWithVisibleEdges(this.text, mask),
           this.measuredText.columns,
         ).getWrappedText()
-      : this.measuredText.getWrappedText()
+      : wrappedLines.map(l => l.text)
 
     const startLine = this.getViewportStartLine(maxVisibleLines)
     const endLine =
@@ -257,20 +312,40 @@ export class Cursor {
         ? Math.min(allLines.length, startLine + maxVisibleLines)
         : allLines.length
 
-    return allLines
-      .slice(startLine, endLine)
+    const selStart = this.selectionStart()
+    const selEnd = this.selectionEnd()
+    const viewportLines = allLines.slice(startLine, endLine)
+
+    // Pre-compute which display lines the selection spans so
+    // renderLineWithSelection can skip lines outside the selection.
+    return viewportLines
       .map((text, i) => {
         const currentLine = i + startLine
-        let displayText = text
-        // looking for the line with the cursor
-        if (line !== currentLine) return displayText.trimEnd()
+        const wrappedLine = wrappedLines[currentLine]
+        const lineCharStart = wrappedLine?.startOffset ?? 0
 
-        // Split the line into before/at/after cursor in a single pass over the
+        // Apply selection highlighting
+        const withSel = this.renderLineWithSelection(
+          text,
+          lineCharStart,
+          invert,
+          cursorLine,
+          cursorCol,
+          currentLine,
+          selStart,
+          selEnd,
+          currentLine === allLines.length - 1,
+        )
+
+        let displayText = withSel.display
+
+        // If cursor is NOT on this line, return selection-highlighted text
+        if (cursorLine !== currentLine) return displayText.trimEnd()
+
+        // ── Cursor on this line ──────────────────────────────
+
+        // Split the line into before/at/after cursor in a single pass over
         // graphemes, accumulating display width until we reach the cursor column.
-        // This replaces a two-pass approach (displayWidthToStringIndex + a second
-        // segmenter pass) — the intermediate stringIndex from that approach is
-        // always a grapheme boundary, so the "cursor in the middle of a
-        // multi-codepoint character" branch was unreachable.
         let beforeCursor = ''
         let atCursor = cursorChar
         let afterCursor = ''
@@ -283,7 +358,7 @@ export class Cursor {
             continue
           }
           const nextWidth = currentWidth + stringWidth(segment)
-          if (nextWidth > column) {
+          if (nextWidth > cursorCol) {
             atCursor = segment
             cursorFound = true
           } else {
@@ -293,7 +368,6 @@ export class Cursor {
         }
 
         // Only invert the cursor if we have a cursor character to show
-        // When ghost text is present and cursor is at end, show first ghost char in cursor
         let renderedCursor: string
         let ghostSuffix = ''
         if (
@@ -302,11 +376,9 @@ export class Cursor {
           this.isAtEnd() &&
           ghostText.text.length > 0
         ) {
-          // First ghost character goes in the inverted cursor (grapheme-safe)
           const firstGhostChar =
             firstGrapheme(ghostText.text) || ghostText.text[0]!
           renderedCursor = cursorChar ? invert(firstGhostChar) : firstGhostChar
-          // Rest of ghost text is dimmed after cursor
           const ghostRest = ghostText.text.slice(firstGhostChar.length)
           if (ghostRest.length > 0) {
             ghostSuffix = ghostText.dim(ghostRest)
@@ -320,6 +392,49 @@ export class Cursor {
         )
       })
       .join('\n')
+  }
+
+  /**
+   * Render text with a viewport-to-offset mapping closure.
+   *
+   * Returns both the rendered string and an `offsetAt(viewportRow, viewportCol)`
+   * function that maps viewport-relative (0-based) screen coordinates to absolute
+   * string offsets in the source text. Returns null for out-of-bounds rows.
+   *
+   * The mapping accounts for:
+   * - Viewport scroll offset (maxVisibleLines)
+   * - Leading whitespace trimming on wrapped continuation lines
+   * - Display-width vs string-index conversion (CJK / wide chars)
+   *
+   * Used by the mouse selection handler to convert screen-cell coordinates
+   * into Cursor-level character offsets.
+   */
+  renderWithMapping(
+    cursorChar: string,
+    mask: string,
+    invert: (text: string) => string,
+    ghostText?: { text: string; dim: (text: string) => string },
+    maxVisibleLines?: number,
+  ): {
+    text: string
+    offsetAt: (viewportRow: number, viewportCol: number) => number | null
+  } {
+    const text = this.render(cursorChar, mask, invert, ghostText, maxVisibleLines)
+    const startLine = this.getViewportStartLine(maxVisibleLines)
+    const totalLines = this.measuredText.getWrappedLines().length
+    const measuredText = this.measuredText // capture for closure
+
+    const offsetAt = (viewportRow: number, viewportCol: number): number | null => {
+      if (viewportCol < 0) return null
+      const absoluteLine = startLine + viewportRow
+      if (absoluteLine < 0 || absoluteLine >= totalLines) return null
+      return measuredText.getOffsetFromPosition({
+        line: absoluteLine,
+        column: viewportCol,
+      })
+    }
+
+    return { text, offsetAt }
   }
 
   left(): Cursor {
@@ -1023,6 +1138,58 @@ export class Cursor {
   }
   isAtEnd(): boolean {
     return this.offset >= this.text.length
+  }
+
+  // ── Selection helpers ──────────────────────────────────────────
+
+  /** Whether an active selection exists (anchor ≥ 0 and anchor ≠ offset). */
+  hasSelection(): boolean {
+    return this.selection >= 0 && this.selection !== this.offset
+  }
+
+  /** The start of the selection range (lower offset). */
+  selectionStart(): number {
+    return Math.min(this.offset, this.selection)
+  }
+
+  /** The end of the selection range (higher offset). */
+  selectionEnd(): number {
+    return Math.max(this.offset, this.selection)
+  }
+
+  /** The selected text, or empty string. */
+  selectedText(): string {
+    return this.hasSelection()
+      ? this.text.slice(this.selectionStart(), this.selectionEnd())
+      : ''
+  }
+
+  /**
+   * Create a cursor with the same offset but a new selection anchor.
+   * Pass offset as anchor to clear selection.
+   */
+  withSelectionAnchor(anchor: number): Cursor {
+    return new Cursor(this.measuredText, this.offset, anchor)
+  }
+
+  /** Move offset while preserving the selection anchor. */
+  extendSelection(newOffset: number): Cursor {
+    return new Cursor(this.measuredText, newOffset, this.selection)
+  }
+
+  /** Clear selection by setting anchor to offset. */
+  clearSelection(): Cursor {
+    return new Cursor(this.measuredText, this.offset, this.offset)
+  }
+
+  /** Delete the selected text and return the resulting cursor at the
+   *  start of the former selection. No-op when there is no selection. */
+  deleteSelection(): Cursor {
+    if (!this.hasSelection()) return this
+    const start = this.selectionStart()
+    const end = this.selectionEnd()
+    const newText = this.text.slice(0, start) + this.text.slice(end)
+    return Cursor.fromText(newText, this.columns, start)
   }
 
   startOfFirstLine(): Cursor {

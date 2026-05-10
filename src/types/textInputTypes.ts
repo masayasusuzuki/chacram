@@ -199,6 +199,13 @@ export type BaseTextInputProps = {
    * input drops the event.
    */
   readonly inputFilter?: (input: string, key: Key) => string
+
+  /**
+   * Ref to the input Box's screen (x, y) position, used by mouse-drag
+   * selection sync to convert Ink absolute coordinates to viewport-relative
+   * coordinates before mapping to string offsets.
+   */
+  readonly selectionSyncRef?: React.MutableRefObject<{ x: number; y: number } | null>
 }
 
 /**
