@@ -134,6 +134,37 @@ export function resetYankState(): void {
 export const VIM_WORD_CHAR_REGEX = /^[\p{L}\p{N}\p{M}_]$/u
 export const WHITESPACE_REGEX = /\s/
 
+// Match a single ANSI CSI escape sequence (parameters / intermediates / final).
+// Used to keep escape codes (e.g. \x1b[7m) atomic when walking display text
+// for cursor placement — grapheme segmentation alone would split them.
+const ANSI_CSI_REGEX = /\x1b\[[\x30-\x3F]*[\x20-\x2F]*[\x40-\x7E]/g
+
+type AnsiAwareToken = { value: string; isAnsi: boolean }
+
+function* tokenizeAnsi(text: string): Generator<AnsiAwareToken> {
+  let lastIdx = 0
+  ANSI_CSI_REGEX.lastIndex = 0
+  let m: RegExpExecArray | null
+  while ((m = ANSI_CSI_REGEX.exec(text)) !== null) {
+    if (m.index > lastIdx) {
+      for (const { segment } of getGraphemeSegmenter().segment(
+        text.slice(lastIdx, m.index),
+      )) {
+        yield { value: segment, isAnsi: false }
+      }
+    }
+    yield { value: m[0], isAnsi: true }
+    lastIdx = m.index + m[0].length
+  }
+  if (lastIdx < text.length) {
+    for (const { segment } of getGraphemeSegmenter().segment(
+      text.slice(lastIdx),
+    )) {
+      yield { value: segment, isAnsi: false }
+    }
+  }
+}
+
 // Exported helper functions for Vim character classification
 export const isVimWordChar = (ch: string): boolean =>
   VIM_WORD_CHAR_REGEX.test(ch)
@@ -344,26 +375,47 @@ export class Cursor {
 
         // ── Cursor on this line ──────────────────────────────
 
-        // Split the line into before/at/after cursor in a single pass over
-        // graphemes, accumulating display width until we reach the cursor column.
+        // Split the line into before/at/after cursor in a single pass.
+        // displayText may contain ANSI CSI escape sequences (e.g. \x1b[7m
+        // from selection inversion) that must be treated as atomic,
+        // zero-width tokens — naive grapheme segmentation would shred
+        // them into individual codepoints, count them as visible width,
+        // and split mid-sequence at the cursor (causing fragments like
+        // "[7m" to leak as raw text in the output).
         let beforeCursor = ''
         let atCursor = cursorChar
         let afterCursor = ''
         let currentWidth = 0
         let cursorFound = false
+        // Track whether the surrounding text has SGR-7 (inverse) active at
+        // the cursor position. When the cursor lands inside the selection's
+        // inverse span (e.g. backward drag — cursor at selStart), the
+        // cursor's own invert(...) wraps with `\x1b[7m...\x1b[27m`; the
+        // closing 27 prematurely terminates the selection's inverse for the
+        // remainder of the line. We compensate by re-opening \x1b[7m after
+        // the cursor when needed.
+        let inverseCurrent = false
+        let inverseAtCursor = false
 
-        for (const { segment } of getGraphemeSegmenter().segment(displayText)) {
+        for (const tok of tokenizeAnsi(displayText)) {
           if (cursorFound) {
-            afterCursor += segment
+            afterCursor += tok.value
             continue
           }
-          const nextWidth = currentWidth + stringWidth(segment)
+          if (tok.isAnsi) {
+            if (tok.value === '\x1b[7m') inverseCurrent = true
+            else if (tok.value === '\x1b[27m') inverseCurrent = false
+            beforeCursor += tok.value
+            continue
+          }
+          const nextWidth = currentWidth + stringWidth(tok.value)
           if (nextWidth > cursorCol) {
-            atCursor = segment
+            atCursor = tok.value
+            inverseAtCursor = inverseCurrent
             cursorFound = true
           } else {
             currentWidth = nextWidth
-            beforeCursor += segment
+            beforeCursor += tok.value
           }
         }
 
@@ -387,8 +439,21 @@ export class Cursor {
           renderedCursor = cursorChar ? invert(atCursor) : atCursor
         }
 
+        // Re-open SGR-7 after the cursor's invert(...) closing tag if the
+        // cursor was inside an active inverse region (selection). Without
+        // this, the rest of the selection on this line renders without
+        // highlight (e.g. backward selection: cursor at selStart, the
+        // closing \x1b[27m of invert(atCursor) terminates the selection's
+        // inverse for the chars that follow until the original \x1b[27m).
+        const reopenInverse =
+          inverseAtCursor && cursorChar ? '\x1b[7m' : ''
+
         return (
-          beforeCursor + renderedCursor + ghostSuffix + afterCursor.trimEnd()
+          beforeCursor +
+          renderedCursor +
+          ghostSuffix +
+          reopenInverse +
+          afterCursor.trimEnd()
         )
       })
       .join('\n')
